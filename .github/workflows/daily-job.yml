@@ -23,13 +23,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Download yesterday's CSV artifact
-        id: download-artifact
-        uses: actions/download-artifact@v4
+      - name: Restore yesterday's CSV from cache
+        id: cache-restore
+        uses: actions/cache@v4
         with:
-          name: yesterday-csv
-          path: .
-        continue-on-error: true
+          path: orchestra_jobs_yesterday.csv
+          key: yesterday-csv
+
 
       - name: Rename yesterday's CSV if exists
         run: |
@@ -41,7 +41,7 @@ jobs:
         run: |
           python main.py
 
-      - name: Rename today's CSV for artifact upload
+      - name: Rename today's CSV for cache
         run: |
           TODAY=$(date '+%Y-%m-%d')
           if [ -f "orchestra_jobs_${TODAY}.csv" ]; then
@@ -51,7 +51,7 @@ jobs:
       - name: Fetch quote of the day
         id: quote
         run: |
-          quote=$(curl -s https://zenquotes.io/api/today | python3 -c "import sys, json; print(json.load(sys.stdin)[0]['q'] + ' — ' + json.load(sys.stdin)[0]['a'])" 2>/dev/null || echo "Stay inspired!")
+          quote=$(curl -s https://zenquotes.io/api/today | python3 -c "import sys, json; d=json.load(sys.stdin)[0]; print(f'{d[\"q\"]} — {d[\"a\"]}')" || echo "Stay inspired!")
           echo "QUOTE=$quote" >> $GITHUB_ENV
 
       - name: Compare CSV Link Columns
@@ -111,8 +111,8 @@ jobs:
             Violin Scraper Bot
           attachments: ${{ env.diff_file }}
 
-      - name: Upload today's CSV as artifact for next run
-        uses: actions/upload-artifact@v4
+      - name: Save today's CSV to cache for next run
+        uses: actions/cache@v4
         with:
-          name: yesterday-csv
           path: orchestra_jobs_yesterday.csv
+          key: yesterday-csv
