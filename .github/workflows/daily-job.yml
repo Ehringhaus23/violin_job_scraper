@@ -48,11 +48,11 @@ jobs:
             cp "orchestra_jobs_${TODAY}.csv" orchestra_jobs_yesterday.csv
           fi
 
-      - name: Fetch quote of the day
-        id: quote
+      - name: Fetch absurd inspiration from InspiroBot
+        id: inspirobot
         run: |
-          quote=$(curl -s https://zenquotes.io/api/today | python3 -c "import sys, json; d=json.load(sys.stdin)[0]; print(f'{d[\"q\"]} — {d[\"a\"]}')" || echo "Stay inspired!")
-          echo "QUOTE=$quote" >> $GITHUB_ENV
+          image_url=$(curl -s https://inspirobot.me/api?generate=true)
+          echo "QUOTE=[Click here for today's absurd inspiration!]($image_url)" >> $GITHUB_ENV
 
       - name: Compare CSV Link Columns
         id: compare_links
@@ -102,7 +102,7 @@ jobs:
           body: |
             Hello there,
 
-            *${{ env.QUOTE }}*
+            ${{ env.QUOTE }}
 
             ${{ env.mail_body }}
 
