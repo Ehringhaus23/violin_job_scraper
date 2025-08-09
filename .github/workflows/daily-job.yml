@@ -1,0 +1,110 @@
+name: Daily Job Scraper
+
+on:
+  schedule:
+    - cron: '0 23 * * *'  # 9am AEST (UTC+10)
+  workflow_dispatch:
+
+jobs:
+  scrape_jobs:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Download yesterday's CSV artifact
+        id: download-artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: yesterday-csv
+          path: .
+        continue-on-error: true
+
+      - name: Rename yesterday's CSV if exists
+        run: |
+          if [ -f "orchestra_jobs_yesterday.csv" ]; then
+            mv orchestra_jobs_yesterday.csv orchestra_jobs_prev.csv
+          fi
+
+      - name: Run the job scraper
+        run: |
+          python violin_job_scraper/main.py
+
+      - name: Rename today's CSV for artifact upload
+        run: |
+          TODAY=$(date '+%Y-%m-%d')
+          if [ -f "orchestra_jobs_${TODAY}.csv" ]; then
+            cp "orchestra_jobs_${TODAY}.csv" orchestra_jobs_yesterday.csv
+          fi
+
+      - name: Compare CSV Link Columns
+        id: compare_links
+        run: |
+          TODAY=$(date '+%Y-%m-%d')
+          TODAY_FILE="orchestra_jobs_${TODAY}.csv"
+          YESTERDAY_FILE="orchestra_jobs_prev.csv"
+          DIFF_FILE="link_diff_${TODAY}.csv"
+          if [ -f "$YESTERDAY_FILE" ] && [ -f "$TODAY_FILE" ]; then
+            # Extract header and add DIFFERENT column
+            head -n 1 "$TODAY_FILE" | sed 's/$/,DIFFERENT/' > "$DIFF_FILE"
+            # Compare by Link column (assumed to be column 5)
+            tail -n +2 "$TODAY_FILE" | while IFS=, read -r loc1 date1 pos1 orch1 link1; do
+              match=$(tail -n +2 "$YESTERDAY_FILE" | grep -F "$link1")
+              if [ -z "$match" ]; then
+                # Not found in yesterday's file, mark as DIFFERENT
+                echo "$loc1,$date1,$pos1,$orch1,$link1,DIFFERENT" >> "$DIFF_FILE"
+              fi
+            done
+            if [ $(wc -l < "$DIFF_FILE") -gt 1 ]; then
+              echo "differences_found=true" >> $GITHUB_ENV
+              echo "diff_file=$DIFF_FILE" >> $GITHUB_ENV
+              echo "mail_body=The daily violin job scraper found new or changed job links. See the attached CSV for details (rows marked 'DIFFERENT')." >> $GITHUB_ENV
+            else
+              echo "differences_found=false" >> $GITHUB_ENV
+            fi
+          elif [ -f "$TODAY_FILE" ]; then
+            # No yesterday file, send today's full CSV
+            echo "No previous CSV found, sending today's CSV."
+            echo "differences_found=true" >> $GITHUB_ENV
+            echo "diff_file=$TODAY_FILE" >> $GITHUB_ENV
+            echo "mail_body=This is the first run of the violin job scraper. See the attached CSV for all current jobs." >> $GITHUB_ENV
+          else
+            echo "differences_found=false" >> $GITHUB_ENV
+          fi
+
+      - name: Send email if differences found
+        if: env.differences_found == 'true'
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.MAIL_SERVER }}
+          server_port: 465
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: "Violin Job Scraper: New or Changed Job Links"
+          to: ${{ secrets.MAIL_USERNAME }}, ${{ secrets.TARGET_EMAIL }}
+          from: ${{ secrets.MAIL_USERNAME }}
+          body: |
+            Hello,
+
+            ${{ env.mail_body }}
+
+            Regards,
+            Violin Scraper Bot
+          attachments: ${{ env.diff_file }}
+
+      - name: Upload today's CSV as artifact for next run
+        uses: actions/upload-artifact@v4
+        with:
+          name: yesterday-csv
+          path: orchestra_jobs_yesterday.csv
