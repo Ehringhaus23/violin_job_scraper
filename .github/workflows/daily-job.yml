@@ -48,6 +48,12 @@ jobs:
             cp "orchestra_jobs_${TODAY}.csv" orchestra_jobs_yesterday.csv
           fi
 
+      - name: Fetch quote of the day
+        id: quote
+        run: |
+          quote=$(curl -s https://zenquotes.io/api/today | python3 -c "import sys, json; print(json.load(sys.stdin)[0]['q'] + ' — ' + json.load(sys.stdin)[0]['a'])" 2>/dev/null || echo "Stay inspired!")
+          echo "QUOTE=$quote" >> $GITHUB_ENV
+
       - name: Compare CSV Link Columns
         id: compare_links
         run: |
@@ -55,50 +61,52 @@ jobs:
           TODAY_FILE="orchestra_jobs_${TODAY}.csv"
           YESTERDAY_FILE="orchestra_jobs_prev.csv"
           DIFF_FILE="link_diff_${TODAY}.csv"
+          DIFF_COUNT=0
           if [ -f "$YESTERDAY_FILE" ] && [ -f "$TODAY_FILE" ]; then
-            # Extract header and add DIFFERENT column
             head -n 1 "$TODAY_FILE" | sed 's/$/,DIFFERENT/' > "$DIFF_FILE"
-            # Compare by Link column (assumed to be column 5)
             tail -n +2 "$TODAY_FILE" | while IFS=, read -r loc1 date1 pos1 orch1 link1; do
               match=$(tail -n +2 "$YESTERDAY_FILE" | grep -F "$link1")
               if [ -z "$match" ]; then
-                # Not found in yesterday's file, mark as DIFFERENT
                 echo "$loc1,$date1,$pos1,$orch1,$link1,DIFFERENT" >> "$DIFF_FILE"
+                DIFF_COUNT=$((DIFF_COUNT+1))
               fi
             done
-            if [ $(wc -l < "$DIFF_FILE") -gt 1 ]; then
-              echo "differences_found=true" >> $GITHUB_ENV
-              echo "diff_file=$DIFF_FILE" >> $GITHUB_ENV
-              echo "mail_body=The daily violin job scraper found new or changed job links. See the attached CSV for details (rows marked 'DIFFERENT')." >> $GITHUB_ENV
+            echo "diff_file=$DIFF_FILE" >> $GITHUB_ENV
+            echo "diff_count=$DIFF_COUNT" >> $GITHUB_ENV
+            if [ $DIFF_COUNT -gt 0 ]; then
+              echo "mail_body=The daily violin job scraper found $DIFF_COUNT new or changed job links. See the attached CSV for details (rows marked 'DIFFERENT')." >> $GITHUB_ENV
             else
-              echo "differences_found=false" >> $GITHUB_ENV
+              echo "mail_body=No new or changed job links were found today. See the attached CSV for all current jobs." >> $GITHUB_ENV
             fi
           elif [ -f "$TODAY_FILE" ]; then
-            # No yesterday file, send today's full CSV
             echo "No previous CSV found, sending today's CSV."
-            echo "differences_found=true" >> $GITHUB_ENV
             echo "diff_file=$TODAY_FILE" >> $GITHUB_ENV
+            echo "diff_count=ALL" >> $GITHUB_ENV
             echo "mail_body=This is the first run of the violin job scraper. See the attached CSV for all current jobs." >> $GITHUB_ENV
           else
-            echo "differences_found=false" >> $GITHUB_ENV
+            echo "diff_file=" >> $GITHUB_ENV
+            echo "diff_count=0" >> $GITHUB_ENV
+            echo "mail_body=No CSV file was generated today." >> $GITHUB_ENV
           fi
 
-      - name: Send email if differences found
-        if: env.differences_found == 'true'
+      - name: Send email with results
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: ${{ secrets.MAIL_SERVER }}
           server_port: 465
           username: ${{ secrets.MAIL_USERNAME }}
           password: ${{ secrets.MAIL_PASSWORD }}
-          subject: "Violin Job Scraper: New or Changed Job Links"
+          subject: "Violin Job Scraper: ${{ env.diff_count }} New or Changed Job Links"
           to: ${{ secrets.MAIL_USERNAME }}, ${{ secrets.TARGET_EMAIL }}
           from: ${{ secrets.MAIL_USERNAME }}
           body: |
-            Hello,
+            Hello there,
+
+            *${{ env.QUOTE }}*
 
             ${{ env.mail_body }}
 
+            Have a great day!
             Regards,
             Violin Scraper Bot
           attachments: ${{ env.diff_file }}
