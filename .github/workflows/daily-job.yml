@@ -39,7 +39,7 @@ jobs:
 
       - name: Run the job scraper
         run: |
-          python violin_job_scraper/main.py
+          python main.py
 
       - name: Rename today's CSV for artifact upload
         run: |
