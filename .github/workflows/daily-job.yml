@@ -64,13 +64,13 @@ jobs:
           DIFF_COUNT=0
           if [ -f "$YESTERDAY_FILE" ] && [ -f "$TODAY_FILE" ]; then
             head -n 1 "$TODAY_FILE" > "$DIFF_FILE"
-            tail -n +2 "$TODAY_FILE" | while IFS=, read -r loc1 date1 pos1 orch1 link1; do
+            while IFS=, read -r loc1 date1 pos1 orch1 link1; do
               match=$(tail -n +2 "$YESTERDAY_FILE" | grep -F "$link1")
               if [ -z "$match" ]; then
                 echo "$loc1,$date1,$pos1,$orch1,$link1" >> "$DIFF_FILE"
                 DIFF_COUNT=$((DIFF_COUNT+1))
               fi
-            done
+            done < <(tail -n +2 "$TODAY_FILE")
             echo "diff_file=$DIFF_FILE" >> $GITHUB_ENV
             echo "diff_count=$DIFF_COUNT" >> $GITHUB_ENV
             if [ $DIFF_COUNT -gt 0 ]; then
