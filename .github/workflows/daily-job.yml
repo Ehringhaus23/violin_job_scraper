@@ -29,6 +29,7 @@ jobs:
         with:
           path: orchestra_jobs_yesterday.csv
           key: yesterday-csv
+
           
       - name: Rename yesterday's CSV if exists
         run: |
@@ -53,26 +54,27 @@ jobs:
           image_url=$(curl -s https://inspirobot.me/api?generate=true)
           echo "QUOTE=[Click here for today's absurd inspiration!]($image_url)" >> $GITHUB_ENV
 
-      - name: Compare CSV Link Columns (count only)
+      - name: Compare CSV Link Columns
         id: compare_links
         run: |
           TODAY=$(date '+%Y-%m-%d')
           TODAY_FILE="orchestra_jobs_${TODAY}.csv"
           YESTERDAY_FILE="orchestra_jobs_prev.csv"
+          DIFF_FILE="link_diff_${TODAY}.csv"
           DIFF_COUNT=0
           if [ -f "$YESTERDAY_FILE" ] && [ -f "$TODAY_FILE" ]; then
-            while IFS=, read -r loc1 date1 pos1 orch1 link1; do
-              if [ "$link1" != "link" ]; then  # skip header
-                match=$(tail -n +2 "$YESTERDAY_FILE" | grep -F "$link1")
-                if [ -z "$match" ]; then
-                  DIFF_COUNT=$((DIFF_COUNT+1))
-                fi
+            head -n 1 "$TODAY_FILE" > "$DIFF_FILE"
+            tail -n +2 "$TODAY_FILE" | while IFS=, read -r loc1 date1 pos1 orch1 link1; do
+              match=$(tail -n +2 "$YESTERDAY_FILE" | grep -F "$link1")
+              if [ -z "$match" ]; then
+                echo "$loc1,$date1,$pos1,$orch1,$link1" >> "$DIFF_FILE"
+                DIFF_COUNT=$((DIFF_COUNT+1))
               fi
-            done < "$TODAY_FILE"
-            echo "diff_file=$TODAY_FILE" >> $GITHUB_ENV
+            done
+            echo "diff_file=$DIFF_FILE" >> $GITHUB_ENV
             echo "diff_count=$DIFF_COUNT" >> $GITHUB_ENV
             if [ $DIFF_COUNT -gt 0 ]; then
-              echo "mail_body=The daily violin job scraper found $DIFF_COUNT new or changed job links. See the attached CSV for details." >> $GITHUB_ENV
+              echo "mail_body=The daily violin job scraper found $DIFF_COUNT new or changed job links. See the attached CSV for details (rows marked 'DIFFERENT')." >> $GITHUB_ENV
             else
               echo "mail_body=No new or changed job links were found today. See the attached CSV for all current jobs." >> $GITHUB_ENV
             fi
