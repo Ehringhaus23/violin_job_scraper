@@ -18,13 +18,21 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Log: Dependencies install started
+        run: echo "::group::Installing dependencies"
+
       - name: Install dependencies
         run: |
+          set -xe
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Log: Dependencies installed
+        run: echo "::endgroup::"
+
       - name: Restore yesterday's CSV from cache
         id: cache-restore
+        run: echo "Restoring yesterday's CSV from cache..."
         uses: actions/cache@v4
         with:
           path: orchestra_jobs_yesterday.csv
@@ -32,25 +40,36 @@ jobs:
 
       - name: Print cached CSV (after restore)
         run: |
+          echo "::group::Cached CSV after restore"
           echo "=== orchestra_jobs_yesterday.csv ==="
           if [ -f orchestra_jobs_yesterday.csv ]; then
             cat orchestra_jobs_yesterday.csv
           else
             echo "File not found."
           fi
+          echo "::endgroup::"
 
       - name: Rename yesterday's CSV if exists
         run: |
+          echo "::group::Renaming yesterday's CSV if exists"
           if [ -f "orchestra_jobs_yesterday.csv" ]; then
             mv orchestra_jobs_yesterday.csv orchestra_jobs_prev.csv
+            echo "Renamed orchestra_jobs_yesterday.csv to orchestra_jobs_prev.csv"
+          else
+            echo "No orchestra_jobs_yesterday.csv to rename."
           fi
+          echo "::endgroup::"
 
       - name: Run the job scraper
         run: |
+          echo "::group::Running main.py"
+          set -xe
           python main.py
+          echo "::endgroup::"
 
       - name: Print today's CSV (after main.py)
         run: |
+          echo "::group::Today's CSV after main.py"
           TODAY=$(date '+%Y-%m-%d')
           echo "=== orchestra_jobs_${TODAY}.csv ==="
           if [ -f "orchestra_jobs_${TODAY}.csv" ]; then
@@ -58,64 +77,86 @@ jobs:
           else
             echo "File not found."
           fi
+          echo "::endgroup::"
 
       - name: Rename today's CSV for cache
         run: |
+          echo "::group::Renaming today's CSV for cache"
           TODAY=$(date '+%Y-%m-%d')
           if [ -f "orchestra_jobs_${TODAY}.csv" ]; then
             cp "orchestra_jobs_${TODAY}.csv" orchestra_jobs_yesterday.csv
+            echo "Copied orchestra_jobs_${TODAY}.csv to orchestra_jobs_yesterday.csv"
+          else
+            echo "No orchestra_jobs_${TODAY}.csv to copy."
           fi
+          echo "::endgroup::"
 
       - name: Print CSV to be saved to cache (before cache step)
         run: |
+          echo "::group::CSV to be cached"
           echo "=== orchestra_jobs_yesterday.csv (to be cached) ==="
           if [ -f orchestra_jobs_yesterday.csv ]; then
             cat orchestra_jobs_yesterday.csv
           else
             echo "File not found."
           fi
+          echo "::endgroup::"
 
       - name: Fetch absurd inspiration from InspiroBot
         id: inspirobot
         run: |
+          echo "::group::Fetching inspiration from InspiroBot"
           image_url=$(curl -s https://inspirobot.me/api?generate=true)
-          echo "QUOTE=[Click here for today's absurd inspiration!]($image_url)" >> $GITHUB_ENV
+          echo "QUOTE=<a href=\"$image_url\">Click here for today's absurd inspiration!</a><br><img src=\"$image_url\" width=\"400\" alt=\"InspiroBot Inspiration\">" >> $GITHUB_ENV
+          echo "INSPIRATION_IMG=$image_url" >> $GITHUB_ENV
+          echo "InspiroBot URL: $image_url"
+          echo "::endgroup::"
 
       - name: Compare CSV Link Columns
         id: compare_links
         run: |
+          echo "::group::Comparing CSV link columns"
           TODAY=$(date '+%Y-%m-%d')
           TODAY_FILE="orchestra_jobs_${TODAY}.csv"
           YESTERDAY_FILE="orchestra_jobs_prev.csv"
           DIFF_COUNT=0
           if [ -f "$YESTERDAY_FILE" ] && [ -f "$TODAY_FILE" ]; then
+            echo "Both $YESTERDAY_FILE and $TODAY_FILE exist. Starting comparison."
             while IFS=, read -r loc1 date1 pos1 orch1 link1; do
               match=$(tail -n +2 "$YESTERDAY_FILE" | grep -F "$link1")
               if [ -z "$match" ]; then
                 DIFF_COUNT=$((DIFF_COUNT+1))
+                echo "New or changed link found: $link1"
               fi
             done < <(tail -n +2 "$TODAY_FILE")
             echo "diff_file=$TODAY_FILE" >> $GITHUB_ENV
             echo "diff_count=$DIFF_COUNT" >> $GITHUB_ENV
             if [ $DIFF_COUNT -gt 0 ]; then
               echo "mail_body=The daily violin job scraper found $DIFF_COUNT new or changed job links. See the attached CSV for details." >> $GITHUB_ENV
+              echo "send_mail=true" >> $GITHUB_ENV
+              echo "$DIFF_COUNT new/changed links found, email will be sent."
             else
               echo "mail_body=No new or changed job links were found today. See the attached CSV for all current jobs." >> $GITHUB_ENV
+              echo "send_mail=false" >> $GITHUB_ENV
+              echo "No new/changed links, email will NOT be sent."
             fi
           elif [ -f "$TODAY_FILE" ]; then
             echo "No previous CSV found, sending today's CSV."
             echo "diff_file=$TODAY_FILE" >> $GITHUB_ENV
             echo "diff_count=ALL" >> $GITHUB_ENV
             echo "mail_body=This is the first run of the violin job scraper. See the attached CSV for all current jobs." >> $GITHUB_ENV
+            echo "send_mail=true" >> $GITHUB_ENV
           else
+            echo "No CSVs found for comparison. Skipping email."
             echo "diff_file=" >> $GITHUB_ENV
             echo "diff_count=0" >> $GITHUB_ENV
             echo "mail_body=No CSV file was generated today." >> $GITHUB_ENV
+            echo "send_mail=false" >> $GITHUB_ENV
           fi
-
-      # Remove the Print diff CSV (after compare step) step
+          echo "::endgroup::"
 
       - name: Send email with results
+        if: env.send_mail == 'true'
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: ${{ secrets.MAIL_SERVER }}
@@ -126,19 +167,33 @@ jobs:
           to: ${{ secrets.MAIL_USERNAME }}, ${{ secrets.TARGET_EMAIL }}
           from: ${{ secrets.MAIL_USERNAME }}
           body: |
-            Hello there,
-
-            ${{ env.QUOTE }}
-
-            ${{ env.mail_body }}
-
-            Have a great day!
-            Regards,
+            <html>
+            <body>
+            Hello there,<br><br>
+            ${{ env.QUOTE }}<br><br>
+            ${{ env.mail_body }}<br><br>
+            Have a great day!<br>
+            Regards,<br>
             Violin Scraper Bot
+            </body>
+            </html>
+          content_type: text/html
           attachments: ${{ env.diff_file }}
 
+      - name: Log: Email step skipped or completed
+        run: |
+          if [ "${{ env.send_mail }}" = "true" ]; then
+            echo "Email was sent with results."
+          else
+            echo "Email was skipped (no new/changed jobs or failure above)."
+          fi
+
       - name: Save today's CSV to cache for next run
+        run: echo "Saving today's CSV to cache..."
         uses: actions/cache@v4
         with:
           path: orchestra_jobs_yesterday.csv
           key: yesterday-csv
+
+      - name: Log: Workflow completed
+        run: echo "Workflow completed successfully!"
