@@ -113,6 +113,7 @@ jobs:
 
       - name: Compare CSV Link Columns
         id: compare_links
+        shell: bash
         run: |
           echo "::group::Comparing CSV link columns"
           TODAY=$(date '+%Y-%m-%d')
