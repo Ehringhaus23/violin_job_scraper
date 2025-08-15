@@ -123,7 +123,7 @@ jobs:
           if [ -f "$YESTERDAY_FILE" ] && [ -f "$TODAY_FILE" ]; then
             echo "Both $YESTERDAY_FILE and $TODAY_FILE exist. Starting comparison."
             while IFS=, read -r loc1 date1 pos1 orch1 link1; do
-              match=$(tail -n +2 "$YESTERDAY_FILE" | grep -F "$link1")
+              match=$(tail -n +2 "$YESTERDAY_FILE" | grep -F "$link1" || true)
               if [ -z "$match" ]; then
                 DIFF_COUNT=$((DIFF_COUNT+1))
                 echo "New or changed link found: $link1"
