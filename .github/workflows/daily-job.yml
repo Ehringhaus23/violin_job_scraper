@@ -18,7 +18,7 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Log: Dependencies install started
+      - name: Dependencies install started
         run: echo "::group::Installing dependencies"
 
       - name: Install dependencies
@@ -27,18 +27,17 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Log: Dependencies installed
+      - name: Dependencies installed
         run: echo "::endgroup::"
 
       - name: Restore yesterday's CSV from cache
         id: cache-restore
-        run: echo "Restoring yesterday's CSV from cache..."
         uses: actions/cache@v4
         with:
           path: orchestra_jobs_yesterday.csv
           key: yesterday-csv
 
-      - name: Print cached CSV (after restore)
+      - name: Cached CSV after restore
         run: |
           echo "::group::Cached CSV after restore"
           echo "=== orchestra_jobs_yesterday.csv ==="
@@ -67,7 +66,7 @@ jobs:
           python main.py
           echo "::endgroup::"
 
-      - name: Print today's CSV (after main.py)
+      - name: Today's CSV after main.py
         run: |
           echo "::group::Today's CSV after main.py"
           TODAY=$(date '+%Y-%m-%d')
@@ -91,7 +90,7 @@ jobs:
           fi
           echo "::endgroup::"
 
-      - name: Print CSV to be saved to cache (before cache step)
+      - name: CSV to be cached (before cache step)
         run: |
           echo "::group::CSV to be cached"
           echo "=== orchestra_jobs_yesterday.csv (to be cached) ==="
@@ -155,32 +154,7 @@ jobs:
           fi
           echo "::endgroup::"
 
-      - name: Send email with results
-        if: env.send_mail == 'true'
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: ${{ secrets.MAIL_SERVER }}
-          server_port: 465
-          username: ${{ secrets.MAIL_USERNAME }}
-          password: ${{ secrets.MAIL_PASSWORD }}
-          subject: "Violin Job Scraper: ${{ env.diff_count }} New or Changed Job Links"
-          to: ${{ secrets.MAIL_USERNAME }}, ${{ secrets.TARGET_EMAIL }}
-          from: ${{ secrets.MAIL_USERNAME }}
-          body: |
-            <html>
-            <body>
-            Hello there,<br><br>
-            ${{ env.QUOTE }}<br><br>
-            ${{ env.mail_body }}<br><br>
-            Have a great day!<br>
-            Regards,<br>
-            Violin Scraper Bot
-            </body>
-            </html>
-          content_type: text/html
-          attachments: ${{ env.diff_file }}
-
-      - name: Log: Email step skipped or completed
+      - name: Email step skipped or completed
         run: |
           if [ "${{ env.send_mail }}" = "true" ]; then
             echo "Email was sent with results."
@@ -189,11 +163,10 @@ jobs:
           fi
 
       - name: Save today's CSV to cache for next run
-        run: echo "Saving today's CSV to cache..."
         uses: actions/cache@v4
         with:
           path: orchestra_jobs_yesterday.csv
           key: yesterday-csv
 
-      - name: Log: Workflow completed
+      - name: Workflow completed
         run: echo "Workflow completed successfully!"
